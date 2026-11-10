@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Emisora | Registro de ubicación GPS</title>
+  <style>
+    :root { color-scheme:light; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+    body { background:#edf3f8; margin:0; padding:25px 12px; color:#132d43; }
+    main { width:min(520px,100%);box-sizing:border-box;margin:auto;padding:25px;background:#fff;border-radius:16px;box-shadow:0 8px 30px #1743631a; }
+    h1 { font-size:1.45rem;margin:0 0 8px; } p{line-height:1.5} .muted{color:#536778;font-size:.94rem}
+    .info{background:#eaf5fd;padding:12px 14px;border-radius:9px;margin:17px 0;}
+    label{display:flex;gap:10px;align-items:flex-start;margin:18px 0;font-size:.94rem;}
+    input[type=checkbox]{margin-top:5px;transform:scale(1.2)} button{width:100%;padding:13px;border:0;border-radius:10px;font-size:1rem;font-weight:650;cursor:pointer;}
+    #capture {background:#174c76;color:#fff} #continue{background:#06816a;color:#fff;margin-top:10px} button:disabled{background:#a6b2be!important;cursor:not-allowed}
+    #result{margin-top:17px;border-radius:9px;padding:13px;white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f8fb;font-size:.92rem}
+    .error{color:#982b2b;} a{color:#174c76}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Registro de ubicación — Emisora</h1>
+  <p>Este paso permite registrar las coordenadas del dispositivo <strong>únicamente cuando usted lo autoriza</strong>. Después podrá continuar al formulario de Control Máster, Producción o Incidentes.</p>
+  <div class="info">La ubicación se captura una sola vez, justo al pulsar el botón. No existe rastreo permanente. Al pulsar «Continuar», los datos se transmitirán a Google Forms mediante el enlace de prellenado y quedarán registrados al enviar el formulario.</div>
+  <label><input type="checkbox" id="consent"><span>Autorizo capturar mis coordenadas, fecha y precisión aproximada para documentar este registro de la emisora.</span></label>
+  <button id="capture" disabled>1. Obtener mi ubicación GPS</button>
+  <div id="result" role="status" aria-live="polite">Sin ubicación capturada.</div>
+  <button id="continue" disabled>2. Continuar al formulario</button>
+  <p class="muted">Necesita un teléfono con ubicación activada, navegador actualizado y conexión a Internet. Se recomienda hacerlo desde Chrome o Safari, abriendo esta página directamente (sin incrustarla en otra aplicación).</p>
+</main>
+<script>
+// CONFIGURACIÓN: Pegue aquí el enlace de prellenado obtenido en Apps Script.
+// Debe contener exactamente __GPS_DATOS__ en el campo GPS original del formulario.
+const FORM_PREFILL_TEMPLATE = 'https://docs.google.com/forms/d/e/1FAIpQLSf7_1QV4ogIV2PtJfEvXfv4pcDInmbiwdJxhSftEbYKMRf-RA/viewform?usp=pp_url&entry.1561851145=__GPS_DATOS__';
+const consent=document.getElementById('consent');
+const capture=document.getElementById('capture');
+const next=document.getElementById('continue');
+const result=document.getElementById('result');
+let gpsPayload='';
+consent.addEventListener('change',()=>{capture.disabled=!consent.checked; if(!consent.checked){gpsPayload='';next.disabled=true;result.textContent='Sin ubicación capturada.';}});
+function sessionId(){
+ const bytes=new Uint8Array(8);crypto.getRandomValues(bytes);
+ return 'GPS-'+Date.now().toString(36)+'-'+[...bytes].map(n=>n.toString(16).padStart(2,'0')).join('');
+}
+capture.addEventListener('click',()=>{
+ if(!consent.checked)return;
+ if(!navigator.geolocation){result.textContent='Este navegador no dispone de geolocalización.';return;}
+ capture.disabled=true;next.disabled=true;gpsPayload='';
+ result.textContent='Solicitando autorización y posición del dispositivo…';
+ navigator.geolocation.getCurrentPosition(position=>{
+   const c=position.coords;
+   const lat=c.latitude.toFixed(6), lon=c.longitude.toFixed(6), accuracy=Math.round(c.accuracy);
+   gpsPayload=[sessionId(),lat,lon,accuracy,new Date(position.timestamp).toISOString()].join('|');
+   result.className='';
+   result.textContent=`Ubicación recibida.\nLatitud: ${lat}\nLongitud: ${lon}\nPrecisión estimada: ±${accuracy} m\nFecha/hora: ${new Date(position.timestamp).toLocaleString('es-CO')}\n\nAhora pulse «Continuar al formulario».`;
+   capture.disabled=false;next.disabled=false;
+ },error=>{
+   result.className='error';
+   const messages={1:'Permiso denegado: habilite la ubicación para este sitio.',2:'Ubicación no disponible: active la localización y pruebe cerca de una ventana.',3:'Tiempo de espera agotado: vuelva a intentarlo.'};
+   result.textContent=messages[error.code]||('No fue posible obtener la ubicación: '+error.message);
+   capture.disabled=false;
+ },{enableHighAccuracy:true,maximumAge:0,timeout:25000});
+});
+next.addEventListener('click',()=>{
+ if(!gpsPayload||!consent.checked)return;
+ if(!FORM_PREFILL_TEMPLATE.includes('__GPS_DATOS__')||!/^https:\/\//.test(FORM_PREFILL_TEMPLATE)){
+   result.className='error';result.textContent='Falta configurar la plantilla GPS en index.html. Consulte la guía.';return;
+ }
+ const url=FORM_PREFILL_TEMPLATE.replace('__GPS_DATOS__',encodeURIComponent(gpsPayload));
+ location.assign(url);
+});
+</script>
+</body>
+</html>
